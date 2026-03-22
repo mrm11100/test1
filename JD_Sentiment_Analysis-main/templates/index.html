@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>电商商品评论情感分析系统</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 40px 0; color: #1e293b; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+        .header-text { text-align: center; margin-bottom: 40px; }
+        .header-text h1 { font-size: 32px; font-weight: 800; color: #0f172a; margin-bottom: 10px; }
+        .header-text p { font-size: 16px; color: #64748b; }
+        .search-box { display: flex; align-items: center; background: white; padding: 8px 12px; border-radius: 50px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); max-width: 800px; margin: 0 auto 40px auto; border: 1px solid #e2e8f0; }
+        .search-icon { padding: 0 15px; color: #94a3b8; font-size: 18px; }
+        .search-input { flex: 1; border: none; outline: none; font-size: 16px; color: #334155; background: transparent; }
+        .search-btn { background-color: #5a5ce6; color: white; border: none; padding: 12px 28px; border-radius: 40px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.3s; }
+        .search-btn:disabled { background-color: #94a3b8; cursor: not-allowed; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 24px; }
+        .stat-card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #f1f5f9; position: relative; }
+        .stat-card h3 { margin: 0; font-size: 14px; color: #64748b; font-weight: 500; }
+        .stat-card .value { font-size: 36px; font-weight: 800; color: #0f172a; margin: 10px 0; }
+        .stat-card .trend { font-size: 13px; }
+        .trend.green { color: #10b981; }
+        .trend.red { color: #ef4444; }
+        .trend.yellow { color: #f59e0b; }
+        .stat-icon { position: absolute; top: 24px; right: 24px; font-size: 24px; }
+        .charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+        .chart-card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #f1f5f9; text-align: center; }
+        .chart-card h3 { margin: 0 0 20px 0; font-size: 16px; color: #0f172a; text-align: left; }
+        .chart-card img { max-width: 100%; height: auto; border-radius: 8px; }
+        .chart-placeholder { color: #94a3b8; padding: 40px 0; font-size: 14px; }
+        #loading-overlay { display: none; text-align: center; color: #5a5ce6; font-weight: bold; margin-bottom: 20px; font-size: 16px; }
+
+        /* 动态提示框样式 */
+        .toast { display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); color: white; padding: 12px 24px; border-radius: 8px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; font-weight: bold; }
+        .toast.success { background: #10b981; }
+        .toast.error { background: #ef4444; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="toast" id="toastBox"></div>
+
+    <div class="header-text">
+        <h1>电商商品评论情感分析大屏系统</h1>
+        <p>输入目标商品评论网址，系统将自动定向深度抓取并进行 NLP 情感极性计算。</p>
+    </div>
+
+    <div class="search-box">
+        <div class="search-icon">🔍</div>
+        <input type="text" id="target-url" class="search-input" value="https://book.douban.com/subject/2567698/comments/" placeholder="支持当当/豆瓣/京东，例如：http://product.dangdang.com/29117620.html">
+        <button id="spider-btn" class="search-btn" onclick="startSpider()">🚀 启动分析引擎</button>
+    </div>
+
+    <div id="loading-overlay">⏳ 爬虫正在疯狂翻页抓取中，过程可能需要10-20秒，请耐心等待...</div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3>总评论数</h3>
+            <div class="stat-icon">💬</div>
+            <div class="value" id="val-total">-</div>
+            <div class="trend green">+全网提取完成</div>
+        </div>
+        <div class="stat-card">
+            <h3>正面情绪占比</h3>
+            <div class="stat-icon">👍</div>
+            <div class="value" id="val-pos">-</div>
+            <div class="trend green">基于 SnowNLP 贝叶斯</div>
+        </div>
+        <div class="stat-card">
+            <h3>负面情绪占比</h3>
+            <div class="stat-icon">👎</div>
+            <div class="value" id="val-neg">-</div>
+            <div class="trend red">售后需重点防范</div>
+        </div>
+        <div class="stat-card">
+            <h3>中立情绪占比</h3>
+            <div class="stat-icon">😐</div>
+            <div class="value" id="val-neu">-</div>
+            <div class="trend yellow">用户无明显倾向</div>
+        </div>
+    </div>
+
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h3>📊 全局情感极性分布环形图</h3>
+            <div id="pie-container">
+                <img id="img-pie" src="" style="display: none;">
+                <div class="chart-placeholder" id="pie-placeholder">点击「启动分析引擎」等待数据流注入...</div>
+            </div>
+        </div>
+        <div class="chart-card">
+            <h3>☁️ 正向评价核心诉求词云图</h3>
+            <div id="wc-container">
+                <img id="img-wc" src="" style="display: none;">
+                <div class="chart-placeholder" id="wc-placeholder">点击「启动分析引擎」等待数据流注入...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 智能弹窗（成功弹绿色，失败弹红色）
+    function showToast(msg, type='success') {
+        const toast = document.getElementById('toastBox');
+        toast.textContent = msg;
+        toast.className = 'toast ' + type;
+        toast.style.display = 'block';
+        setTimeout(() => { toast.style.display = 'none'; }, 3000);
+    }
+
+    function isValidUrl(url) {
+        return /^https?:\/\/.+/.test(url);
+    }
+
+    function startSpider() {
+        let targetUrl = document.getElementById('target-url').value.trim();
+        const btn = document.getElementById('spider-btn');
+        const loading = document.getElementById('loading-overlay');
+
+        if (!isValidUrl(targetUrl)) {
+            showToast('请输入有效的包含 http:// 或 https:// 的链接！', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = "⏳ 网络潜行抓取中...";
+        loading.style.display = "block";
+
+        let formData = new FormData();
+        formData.append('url', targetUrl);
+
+        fetch('/run_spider', { method: 'POST', body: formData })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                document.getElementById('val-total').innerText = data.total_count;
+                document.getElementById('val-pos').innerText = data.pos_rate;
+                document.getElementById('val-neg').innerText = data.neg_rate;
+                document.getElementById('val-neu').innerText = data.neu_rate;
+
+                const timeStamp = new Date().getTime();
+                const pieImg = document.getElementById('img-pie');
+                const wcImg = document.getElementById('img-wc');
+
+                pieImg.src = `/static/Emotion_Pie_Chart.png?t=${timeStamp}`;
+                wcImg.src = `/static/Positive_WordCloud.png?t=${timeStamp}`;
+                pieImg.style.display = 'block';
+                wcImg.style.display = 'block';
+                document.getElementById('pie-placeholder').style.display = 'none';
+                document.getElementById('wc-placeholder').style.display = 'none';
+
+                showToast('✅ 抓取与分析大功告成！大屏已更新！', 'success');
+            } else {
+                showToast(data.message || '分析失败，请重试', 'error');
+            }
+        })
+        .catch(error => {
+            showToast(`网络或超时错误：${error.message}`, 'error');
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = "🚀 启动分析引擎";
+            loading.style.display = "none";
+        });
+    }
+</script>
+
+</body>
+</html>
